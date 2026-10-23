@@ -1,0 +1,23 @@
+[project]
+name = "rag"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.161.1",
+    "langchain-anthropic>=1.7.6",
+    "langchain-ollama>=1.1.0",
+    "langgraph>=1.2.16",
+    "langsmith>=0.14.12",
+    "pydantic-settings>=2.16.1",
+    "python-dotenv>=1.2.4",
+    "slowapi>=0.1.10",
+    "uvicorn>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+]

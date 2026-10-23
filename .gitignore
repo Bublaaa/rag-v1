@@ -1,0 +1,53 @@
+
+# =========================
+# Secrets and environment
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Python virtual environment
+# =========================
+.venv/
+venv/
+env/
+
+# =========================
+# Python generated files
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# =========================
+# Testing and coverage
+# =========================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# =========================
+# Linters and type checkers
+# =========================
+.ruff_cache/
+.mypy_cache/
+.pyright/
+
+# =========================
+# macOS
+# =========================
+.DS_Store
+
+# =========================
+# IDE settings (optional)
+# =========================
+.idea/
+# .vscode/
+
+# =========================
+# Logs and temporary files
+# =========================
+*.log
+*.tmp
