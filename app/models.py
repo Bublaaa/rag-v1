@@ -63,6 +63,7 @@ class ErrorResponse(BaseModel):
     request_id: str | None = None
 
 """
+uv run python -c "
 from app.config import get_settings
 settings=get_settings()
 print(f'Environment:{settings.app_env}')
@@ -72,4 +73,5 @@ print(f'Cache TTL: {settings.cache_ttl_seconds} seconds')
 print(f'Max retries: {settings.max_retries}')
 print(f'Is Production: {settings.is_production}')
 print('Config loaded successfully')
+"
 """
