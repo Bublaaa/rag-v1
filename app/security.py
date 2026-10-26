@@ -84,86 +84,88 @@ class PIIDetector:
             masked = pattern.sub(self.MASK_MAP[pii_type], masked)
         return masked
 
+
 class OutputValidator:
-  """
-  Validate LLM output before returning to th client.
-  Catches PII leakage and harmful content in the response.
-  """
-
-  HARMFUL_PATTERNS = [  # noqa: RUF012
-      re.compile(
-          r"\bhere(?:'s| is)\s+(?:how|the way)\s+to\s+(?:hack|steal|attack)\b",
-          re.IGNORECASE,
-      ),
-      re.compile(r"\bpassword\s*(?:is|[:=])\s*", re.IGNORECASE),
-      re.compile(r"\bapi[_\s]?key\s*[:=]", re.IGNORECASE),
-  ]
-
-  def __init__(self):
-    self.pii_detector = PIIDetector()
-  
-  def validate(self, output:str) -> tuple[str,list[str]]:
     """
-    Validate and clean output.
-    Return: (cleaned_output, list_of_warnings)
+    Validate LLM output before returning to th client.
+    Catches PII leakage and harmful content in the response.
     """
-    warnings=[]
-    
-    # Check for PII leakage inputput
-    pii_found = self.pii_detector.detect(output)
-    if pii_found:
-      output = self.pii_detector.mask(output)
-      warnings.append(f"PII masked in output: {list(pii_found.keys())}")
-    
-    for pattern in self.HARMFUL_PATTERNS:
-      if pattern.search(output):
-        output = "[Response Blocjed: Potential harmful content]"
-        warnings.append("Harmful content blocked")
-    
-    return output, warnings
+
+    HARMFUL_PATTERNS = [  # noqa: RUF012
+        re.compile(
+            r"\bhere(?:'s| is)\s+(?:how|the way)\s+to\s+(?:hack|steal|attack)\b",
+            re.IGNORECASE,
+        ),
+        re.compile(r"\bpassword\s*(?:is|[:=])\s*", re.IGNORECASE),
+        re.compile(r"\bapi[_\s]?key\s*[:=]", re.IGNORECASE),
+    ]
+
+    def __init__(self):
+        self.pii_detector = PIIDetector()
+
+    def validate(self, output: str) -> tuple[str, list[str]]:
+        """
+        Validate and clean output.
+        Return: (cleaned_output, list_of_warnings)
+        """
+        warnings = []
+
+        # Check for PII leakage inputput
+        pii_found = self.pii_detector.detect(output)
+        if pii_found:
+            output = self.pii_detector.mask(output)
+            warnings.append(f"PII masked in output: {list(pii_found.keys())}")
+
+        for pattern in self.HARMFUL_PATTERNS:
+            if pattern.search(output):
+                output = "[Response Blocjed: Potential harmful content]"
+                warnings.append("Harmful content blocked")
+
+        return output, warnings
+
 
 class SecurityPipeline:
-  """
-  Full security pipeline that processes input and output.
-  This is the single class wired to API.
-  """
-
-  def __init__(self):
-    self.sanitizer = InputSanitizer()
-    self.pii_detector = PIIDetector()
-    self.output_validator = OutputValidator()
-
-  @traceable(name="security_check_input")
-  def check_input(self, text:str) -> tuple[bool,str,list[str]]:
     """
-    Process input thorigh security cehcks.
-    Return : (is_allowed, cleaned_text, security_notes)
+    Full security pipeline that processes input and output.
+    This is the single class wired to API.
     """
 
-    notes=[]
+    def __init__(self):
+        self.sanitizer = InputSanitizer()
+        self.pii_detector = PIIDetector()
+        self.output_validator = OutputValidator()
 
-    # Step 1 : Check for injection
-    is_safe, reason = self.sanitizer.check(text)
-    if not is_safe :
-      return False, "", [reason]
-    
-    # Step 2 : Clean Input
-    cleaned = self.sanitizer.clean(text)
+    @traceable(name="security_check_input")
+    def check_input(self, text: str) -> tuple[bool, str, list[str]]:
+        """
+        Process input thorigh security cehcks.
+        Return : (is_allowed, cleaned_text, security_notes)
+        """
 
-    #Step 3: Mask PII before reach llm
-    pii_found = self.pii_detector.detect(cleaned)
-    if pii_found:
-      cleaned = self.pii_detector.mask(cleaned)
-      notes.append(f"Input PII masked: {list(pii_found.keys())}")
-    return True, cleaned, notes
+        notes = []
 
-  @traceable(name="security_check_output")
-  def check_output(self, text:str) -> tuple[str, list[str]]:
-    """
-    Validate output before returned to client.
-    Returns: (cleaned_output, warnings)
-    """
-    return self.output_validator.validate(text)
+        # Step 1 : Check for injection
+        is_safe, reason = self.sanitizer.check(text)
+        if not is_safe:
+            return False, "", [reason]
+
+        # Step 2 : Clean Input
+        cleaned = self.sanitizer.clean(text)
+
+        # Step 3: Mask PII before reach llm
+        pii_found = self.pii_detector.detect(cleaned)
+        if pii_found:
+            cleaned = self.pii_detector.mask(cleaned)
+            notes.append(f"Input PII masked: {list(pii_found.keys())}")
+        return True, cleaned, notes
+
+    @traceable(name="security_check_output")
+    def check_output(self, text: str) -> tuple[str, list[str]]:
+        """
+        Validate output before returned to client.
+        Returns: (cleaned_output, warnings)
+        """
+        return self.output_validator.validate(text)
 
 
 """

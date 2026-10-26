@@ -62,6 +62,7 @@ class ErrorResponse(BaseModel):
     detail: str | None = None
     request_id: str | None = None
 
+
 """
 uv run python -c "
 from app.config import get_settings
