@@ -2,6 +2,7 @@ from typing import Optional
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI  # noqa: F401
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langsmith import traceable
@@ -34,12 +35,22 @@ class ProductionAgent:
         settings = get_settings()
 
         self.primary_llm = ChatOllama(
-            model=settings.primary_model, temperature=0, timeout=30, max_retries=0
+            model=settings.primary_model, temperature=0, timeout=30, max_retries=0, api_key=settings.ollama_api_key
         )
 
-        self.fallback_llm = ChatOllama(
-            model=settings.fallback_model, temperature=0, timeout=30, max_retries=0
-        )
+        # self.fallback_llm = ChatOllama(
+        #     model=settings.fallback_model, temperature=0, timeout=30, max_retries=0, api_key=settings.ollama_api_key
+        # )
+
+        # self.fallback_llm = ChatOpenAI(
+        #     model=settings.fallback_model,
+        #     base_url="https://ollama.com/v1",
+        #     api_key=settings.ollama_api_key,
+        #     temperature=0,
+        #     timeout=30,
+        #     max_retries=0,
+        # )
+        
         self.max_retries = settings.max_retries
         self.graph = self._build_graph()
 
@@ -150,17 +161,55 @@ class ProductionAgent:
 
 """
 
-
 uv run python - <<'PY'
+import os
+import sys
+import traceback
+from pathlib import Path
 from unittest.mock import Mock
 
+from dotenv import load_dotenv
+load_dotenv(Path.cwd() / ".env")
+
 from langchain_core.messages import AIMessage
+from langsmith import Client
 from app.agent import ProductionAgent
 
 
-def make_test_agent(max_retries=1):
-    # Skip settings and real LLM initialization.
-    # Test the actual LangGraph workflow with mocked models.
+# ---------------------------------------------------------
+# Test setup
+# ---------------------------------------------------------
+
+if not os.getenv("LANGSMITH_API_KEY"):
+    raise RuntimeError("LANGSMITH_API_KEY is missing from .env")
+
+if os.getenv("LANGSMITH_TRACING", "").lower() not in {"true", "1", "yes"}:
+    raise RuntimeError("Set LANGSMITH_TRACING=true in .env")
+
+client = Client()
+passed = 0
+failed = 0
+
+
+def check(name, test_fn):
+    global passed, failed
+
+    print(f"\n{'=' * 70}")
+    print(f"TEST: {name}")
+    print("=" * 70)
+
+    try:
+        test_fn()
+        passed += 1
+        print("PASS")
+    except Exception as exc:
+        failed += 1
+        print(f"FAIL: {type(exc).__name__}: {exc}")
+        traceback.print_exc()
+
+
+def make_agent(max_retries=1):
+    ""Build the real graph with mocked LLM clients.""
     agent = ProductionAgent.__new__(ProductionAgent)
     agent.max_retries = max_retries
     agent.primary_llm = Mock()
@@ -169,18 +218,12 @@ def make_test_agent(max_retries=1):
     return agent
 
 
-def run_test(name, agent, expected_model, expected_error):
-    print(f"\n{'=' * 60}")
-    print(name)
-    print("=" * 60)
-
-    result = agent.invoke("What is Python?")
-
-    print("Result:", result)
-
+def assert_result(result, expected_model, expected_error):
+    assert isinstance(result, dict)
+    assert isinstance(result.get("response"), str)
+    assert result["response"].strip(), "Response must not be empty"
     assert result["model_used"] == expected_model, (
-        f"Expected model_used={expected_model!r}, "
-        f"got {result['model_used']!r}"
+        f"Expected {expected_model!r}; got {result['model_used']!r}"
     )
 
     if expected_error:
@@ -190,88 +233,173 @@ def run_test(name, agent, expected_model, expected_error):
             f"Unexpected error: {result['error']}"
         )
 
+
+# ---------------------------------------------------------
+# Test 1: Graph construction
+# ---------------------------------------------------------
+
+def test_graph_construction():
+    agent = make_agent()
+    assert agent.graph is not None
+    assert callable(agent.graph.invoke)
+
+
+check("Graph construction", test_graph_construction)
+
+
+# ---------------------------------------------------------
+# Test 2: Primary model succeeds
+# ---------------------------------------------------------
+
+def test_primary_success():
+    agent = make_agent()
+    agent.primary_llm.invoke.return_value = AIMessage(
+        content="Python is a programming language."
+    )
+
+    result = agent.invoke("What is Python?")
+
+    assert_result(result, "primary", False)
+    agent.primary_llm.invoke.assert_called_once()
+    agent.fallback_llm.invoke.assert_not_called()
+
+
+check("Primary model success", test_primary_success)
+
+
+# ---------------------------------------------------------
+# Test 3: Primary fails, fallback succeeds
+# ---------------------------------------------------------
+
+def test_fallback_success():
+    agent = make_agent(max_retries=1)
+    agent.primary_llm.invoke.side_effect = RuntimeError(
+        "Simulated primary model failure"
+    )
+    agent.fallback_llm.invoke.return_value = AIMessage(
+        content="Python is a popular programming language."
+    )
+
+    result = agent.invoke("What is Python?")
+
+    assert_result(result, "fallback", False)
+    agent.primary_llm.invoke.assert_called_once()
+    agent.fallback_llm.invoke.assert_called_once()
+
+
+check("Primary failure followed by fallback success", test_fallback_success)
+
+
+# ---------------------------------------------------------
+# Test 4: Both models fail
+# ---------------------------------------------------------
+
+def test_both_models_fail():
+    agent = make_agent(max_retries=1)
+    agent.primary_llm.invoke.side_effect = RuntimeError(
+        "Simulated primary failure"
+    )
+    agent.fallback_llm.invoke.side_effect = RuntimeError(
+        "Simulated fallback failure"
+    )
+
+    result = agent.invoke("What is Python?")
+
+    assert_result(result, "error_handle", True)
+    assert "sorry" in result["response"].lower()
+    agent.primary_llm.invoke.assert_called_once()
+    agent.fallback_llm.invoke.assert_called_once()
+
+
+check("Both models fail and error handler responds", test_both_models_fail)
+
+
+# ---------------------------------------------------------
+# Test 5: Fallback disabled
+# ---------------------------------------------------------
+
+def test_fallback_disabled():
+    agent = make_agent(max_retries=0)
+    agent.primary_llm.invoke.side_effect = RuntimeError(
+        "Simulated primary failure"
+    )
+
+    result = agent.invoke("What is Python?")
+
+    assert_result(result, "error_handle", True)
+    agent.fallback_llm.invoke.assert_not_called()
+
+
+check("Fallback disabled", test_fallback_disabled)
+
+
+# ---------------------------------------------------------
+# Test 6: Invalid / empty input still follows graph behavior
+# ---------------------------------------------------------
+
+def test_empty_input():
+    agent = make_agent()
+    agent.primary_llm.invoke.return_value = AIMessage(
+        content="I received an empty question."
+    )
+
+    result = agent.invoke("")
+
+    assert_result(result, "primary", False)
+    agent.primary_llm.invoke.assert_called_once()
+
+
+check("Empty input behavior", test_empty_input)
+
+
+# ---------------------------------------------------------
+# Test 7: Real local Ollama integration
+# ---------------------------------------------------------
+
+def test_real_local_ollama():
+    # This uses the actual configured ProductionAgent and real models.
+    # It is intentionally separate from the mocked unit tests.
+    agent = ProductionAgent()
+    result = agent.invoke(
+        "Explain retrieval-augmented generation in one concise sentence."
+    )
+
     assert isinstance(result["response"], str)
-    assert result["response"], "Response should not be empty"
+    assert result["response"].strip(), "Ollama returned an empty response"
 
-    print("PASS")
+    print("Model used:", result["model_used"])
+    print("Response:", result["response"])
+    print("Error:", result["error"])
 
-
-# TEST 1: Primary model succeeds
-agent = make_test_agent()
-agent.primary_llm.invoke.return_value = AIMessage(
-    content="Python is a programming language."
-)
-
-run_test(
-    "TEST 1: Primary model success",
-    agent,
-    "primary",
-    False,
-)
-
-assert agent.fallback_llm.invoke.call_count == 0
+    assert result["error"] is None, (
+        f"Real model invocation returned an error: {result['error']}"
+    )
 
 
-# TEST 2: Primary fails, fallback succeeds
-agent = make_test_agent(max_retries=1)
-agent.primary_llm.invoke.side_effect = RuntimeError(
-    "Primary model unavailable"
-)
-agent.fallback_llm.invoke.return_value = AIMessage(
-    content="Python is a popular programming language."
-)
-
-run_test(
-    "TEST 2: Fallback model success",
-    agent,
-    "fallback",
-    False,
-)
-
-assert agent.primary_llm.invoke.call_count == 1
-assert agent.fallback_llm.invoke.call_count == 1
+check("Real local Ollama integration", test_real_local_ollama)
 
 
-# TEST 3: Both models fail
-agent = make_test_agent(max_retries=1)
-agent.primary_llm.invoke.side_effect = RuntimeError(
-    "Primary model unavailable"
-)
-agent.fallback_llm.invoke.side_effect = RuntimeError(
-    "Fallback model unavailable"
-)
+# ---------------------------------------------------------
+# Flush traces and report
+# ---------------------------------------------------------
 
-run_test(
-    "TEST 3: Both models fail gracefully",
-    agent,
-    "error_handle",
-    True,
-)
+print("\nFlushing LangSmith traces...")
+try:
+    client.flush()
+    print("Trace flush requested.")
+except Exception as exc:
+    print(f"WARNING: Trace flush failed: {type(exc).__name__}: {exc}")
 
-assert agent.primary_llm.invoke.call_count == 1
-assert agent.fallback_llm.invoke.call_count == 1
+print(f"\n{'=' * 70}")
+print(f"RESULTS: {passed} passed, {failed} failed")
+print("=" * 70)
+print("Check the RAG project in LangSmith for the test runs.")
 
-
-# TEST 4: Fallback disabled
-agent = make_test_agent(max_retries=0)
-agent.primary_llm.invoke.side_effect = RuntimeError(
-    "Primary model unavailable"
-)
-
-run_test(
-    "TEST 4: Fallback disabled",
-    agent,
-    "error_handle",
-    True,
-)
-
-assert agent.fallback_llm.invoke.call_count == 0
-
-
-print(f"\n{'=' * 60}")
-print("ALL TESTS PASSED")
-print("=" * 60)
+if failed:
+    sys.exit(1)
 PY
+
+
 
 
 """

@@ -10,8 +10,13 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # LLM Configuration
     ollama_api_key: str
+
+    #Local model
     primary_model: str = "qwen3:8b"
     fallback_model: str = "qwen3:8b"
+
+    # primary_model: str = "gemma4:31b"
+    # fallback_model: str = "gemma4:31b"
 
     # Langsmith
     langchain_tracing_v2: bool = True
