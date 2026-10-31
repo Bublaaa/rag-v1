@@ -180,7 +180,7 @@ async def chat(request: Request, body: ChatRequest):
         extra={
             "extra_data": {
                 "thread_id": body.thread_id,
-                "model_used": model_used,
+                "model_used": model_used, 
                 "latency_ms": round(timer.elapsed_ms, 2),
             }
         },
@@ -193,3 +193,35 @@ async def chat(request: Request, body: ChatRequest):
         cached=False,
         processing_time_ms=round(timer.elapsed_ms, 2),
     )
+
+
+@app.get("/health", response_model=HealthResponse)
+async def health():
+  """ Health check for Docker / Kubernetes."""
+  settings= get_settings()
+
+  checks={
+    "agent": agent is not None,
+    "security": security is not None,
+    "cache": cache is not None
+  }
+
+  all_healthy = all(checks.values())
+
+  return HealthResponse(
+    status = "healthy" if all_healthy else "degraded",
+    environment = settings.app_env,
+    checks = checks
+  )
+
+@app.get("/metrics", response_model=MetricsResponse)
+async def get_metrics():
+  """Metrics for monitoring dashboards."""
+  summary = metrics.summary
+  return MetricsResponse(**summary)
+
+
+@app.get("/cache/stats")
+async def cache_stats():
+  """Cache performance statistics"""
+  return cache.stats
