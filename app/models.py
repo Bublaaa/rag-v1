@@ -3,7 +3,7 @@ API Requests and Response Models
 Pydantic models fro input validation and response structure
 """
 
-from datetime import UTC, datetime
+from datetime import timezone, datetime, UTC
 
 from pydantic import BaseModel, Field
 
@@ -21,16 +21,16 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    """Chat response returned to the client"""
+    """Chat response returned to the client."""
 
     response: str
     thread_id: str
     model_used: str
     cached: bool = False
     processing_time_ms: float
+    security_notes: list[str] = Field(default_factory=list)
     timestamp: str = Field(
-        default_factory=lambda: datetime.now(UTC).isoformat(),
-        description="Timestamp of the response in ISO 8601 format",
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
 
 
