@@ -11,7 +11,7 @@ from langsmith import traceable
 
 class InputSanitizer:
     INJECTION_PATTERNS = [  # noqa: RUF012
-        r"ignore\s+(all\s+)?previous\s+instructions",
+        r"\bignore\s+(?:all\s+)?previous\s+instructions?\b",
         r"forget\s+(all\s+)?previous",
         r"new\s+instructions\s*:",
         r"system\s*prompt",
