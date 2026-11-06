@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     # LLM Configuration
     ollama_api_key: str
 
-    #Local model
+    # Local model
     primary_model: str = "qwen3:8b"
     fallback_model: str = "qwen3:8b"
 

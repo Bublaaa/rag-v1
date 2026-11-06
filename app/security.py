@@ -118,7 +118,7 @@ class OutputValidator:
 
         for pattern in self.HARMFUL_PATTERNS:
             if pattern.search(output):
-                output = "[Response Blocjed: Potential harmful content]"
+                output = "[Response Blocked: Potential harmful content]"
                 warnings.append("Harmful content blocked")
 
         return output, warnings

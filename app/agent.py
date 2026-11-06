@@ -35,7 +35,11 @@ class ProductionAgent:
         settings = get_settings()
 
         self.primary_llm = ChatOllama(
-            model=settings.primary_model, temperature=0, timeout=30, max_retries=0, api_key=settings.ollama_api_key
+            model=settings.primary_model,
+            temperature=0,
+            timeout=30,
+            max_retries=0,
+            api_key=settings.ollama_api_key,
         )
 
         # self.fallback_llm = ChatOllama(
@@ -50,7 +54,7 @@ class ProductionAgent:
         #     timeout=30,
         #     max_retries=0,
         # )
-        
+
         self.max_retries = settings.max_retries
         self.graph = self._build_graph()
 
